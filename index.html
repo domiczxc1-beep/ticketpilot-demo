@@ -1,0 +1,2568 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>TicketPilot AI — Interactive Portfolio Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "system-ui", "sans-serif"],
+              mono: ["JetBrains Mono", "monospace"],
+            },
+            colors: {
+              bg: { 900: "#0B0F19", 800: "#111827", 700: "#151B2B" },
+              line: "#1E293B",
+              accent: { DEFAULT: "#6366F1", soft: "#818CF8" },
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        background: #0b0f19;
+        color: #e2e8f0;
+        font-family: Inter, system-ui, sans-serif;
+      }
+      .mono {
+        font-family: "JetBrains Mono", monospace;
+      }
+      .tabular {
+        font-variant-numeric: tabular-nums;
+      }
+      .card {
+        background: #151b2b;
+        border: 1px solid #1e293b;
+      }
+      .badge {
+        font-size: 11px;
+        font-weight: 500;
+        padding: 2px 8px;
+        border-radius: 6px;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+      .hover-row:hover {
+        background: #1a2236;
+      }
+      .scrollbar-thin::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      .scrollbar-thin::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 3px;
+      }
+      .scrollbar-thin::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      @keyframes ring {
+        0% {
+          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5);
+        }
+        70% {
+          box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+        }
+      }
+      .pulse-dot {
+        animation: ring 2s infinite;
+      }
+      .nav-item {
+        border-left: 2px solid transparent;
+      }
+      .nav-item.active {
+        background: linear-gradient(
+          90deg,
+          rgba(99, 102, 241, 0.15),
+          transparent
+        );
+        border-left-color: #6366f1;
+        color: #fff;
+      }
+      .inp {
+        width: 100%;
+        background: #0b0f19;
+        border: 1px solid #1e293b;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 13px;
+        color: #e2e8f0;
+        outline: none;
+      }
+      .inp:focus {
+        border-color: #6366f1;
+      }
+      .btn {
+        font-size: 13px;
+        font-weight: 500;
+        padding: 6px 12px;
+        border-radius: 8px;
+        transition: 0.15s;
+      }
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .sk {
+        background: #1e293b;
+        border-radius: 4px;
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.4;
+        }
+        50% {
+          opacity: 0.9;
+        }
+      }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <div id="app"></div>
+    <div
+      id="drawer-backdrop"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 hidden"
+      data-action="drawer-backdrop"
+    ></div>
+    <aside
+      id="drawer"
+      class="fixed top-0 right-0 h-full w-full max-w-[480px] bg-bg-800 border-l border-line z-50 translate-x-full transition-transform duration-200 flex flex-col"
+    ></aside>
+    <div
+      id="modal-backdrop"
+      class="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 hidden"
+      data-action="modal-backdrop"
+    ></div>
+    <div
+      id="modal"
+      class="fixed inset-0 z-50 hidden items-center justify-center p-4"
+    ></div>
+    <div
+      id="toasts"
+      class="fixed bottom-6 right-6 z-[60] flex flex-col gap-2 items-end"
+    ></div>
+
+    <script>
+      "use strict";
+      /* ================= UTILS ================= */
+      const esc = (s) =>
+        String(s ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const $ = (id) => document.getElementById(id);
+      const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+      const pct = (a, b) => (b ? (a / b) * 100 : 0);
+      function lsGet(k, d) {
+        try {
+          return localStorage.getItem(k) ?? d;
+        } catch (e) {
+          return d;
+        }
+      }
+      function lsSet(k, v) {
+        try {
+          localStorage.setItem(k, v);
+        } catch (e) {
+          toast(
+            "Storage unavailable (private mode) — kept in memory only",
+            "warning",
+          );
+        }
+      }
+      function fmtTime(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return "unknown";
+        const diff = (Date.now() - d.getTime()) / 1000;
+        if (diff < 60) return "just now";
+        if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+        if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+        return Math.floor(diff / 86400) + "d ago";
+      }
+      function fmtFull(iso) {
+        const d = new Date(iso);
+        return isNaN(d) ? "unknown" : d.toLocaleString();
+      }
+      function addSec(iso, s) {
+        const d = new Date(iso);
+        if (isNaN(d)) return iso;
+        return new Date(d.getTime() + s * 1000).toISOString();
+      }
+
+      /* ================= DEMO DATASET (real batch run ba839b73) ================= */
+      /* fields: id, ext, subject, body, cat, urg, conf, status, assigned, expCat, expUrg, expReview, gate, viol, err */
+      const RAW = [
+        [
+          1,
+          "case-001",
+          "Duplicate invoice charge",
+          "I was charged twice for my monthly subscription. Please refund the duplicate payment.",
+          "Billing",
+          "Medium",
+          95,
+          "AUTO_ROUTED",
+          "billing-team@example.com",
+          "Billing",
+          "High",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          2,
+          "case-002",
+          "Where can I find my invoice?",
+          "I need the invoice for last month for accounting. Where can I download it?",
+          "Billing",
+          "Low",
+          95,
+          "AUTO_ROUTED",
+          "billing-team@example.com",
+          "Billing",
+          "Low",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          3,
+          "case-003",
+          "Password reset email not received",
+          "I requested a password reset but did not receive the email in my inbox or spam folder.",
+          "Technical",
+          "Medium",
+          95,
+          "AUTO_ROUTED",
+          "tech-support@example.com",
+          "Technical",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          4,
+          "case-004",
+          "Login button does nothing",
+          "I enter the correct password but the login button does nothing. I tried Chrome and Firefox.",
+          "Technical",
+          "Medium",
+          95,
+          "AUTO_ROUTED",
+          "tech-support@example.com",
+          "Technical",
+          "High",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          5,
+          "case-005",
+          "Production API returning 500 errors",
+          "Our integration started receiving intermittent 500 errors from the API. This is affecting production traffic.",
+          "Technical",
+          "High",
+          95,
+          "AUTO_ROUTED",
+          "tech-oncall@example.com",
+          "Bug",
+          "High",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          6,
+          "case-006",
+          "Feature request: dark mode",
+          "It would be great to have a dark mode in the web dashboard.",
+          "Feature",
+          "Low",
+          100,
+          "AUTO_ROUTED",
+          "general-support@example.com",
+          "Feature",
+          "Low",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          7,
+          "case-007",
+          "CSV export missing column",
+          "When I export usage data to CSV, the cost column is missing.",
+          "Bug",
+          "Medium",
+          95,
+          "AUTO_ROUTED",
+          "tech-support@example.com",
+          "Bug",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          8,
+          "case-008",
+          "How do I upgrade my subscription?",
+          "I want to move from Starter to Pro. How do I upgrade without losing data?",
+          "Billing",
+          "Low",
+          95,
+          "AUTO_ROUTED",
+          "billing-team@example.com",
+          "Billing",
+          "Low",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          9,
+          "case-009",
+          "It doesn't work",
+          "It doesn't work.",
+          "Technical",
+          "Low",
+          85,
+          "MANUAL_REVIEW",
+          null,
+          "General",
+          "Low",
+          true,
+          "ambiguous body (<20 chars)",
+          false,
+          false,
+        ],
+        [
+          10,
+          "case-010",
+          "urgent help!!!",
+          "urgent help!!! something is wrong!!!",
+          "Technical",
+          "High",
+          95,
+          "MANUAL_REVIEW",
+          null,
+          "General",
+          "High",
+          true,
+          "ambiguous pattern",
+          false,
+          false,
+        ],
+        [
+          11,
+          "case-011",
+          "Billing, login and feature issue",
+          "I was charged twice, I cannot login, and I also want dark mode. Please fix everything.",
+          "Billing",
+          "Medium",
+          95,
+          "AUTO_ROUTED",
+          "billing-team@example.com",
+          "General",
+          "Medium",
+          true,
+          null,
+          true,
+          false,
+        ],
+        [
+          12,
+          "case-012",
+          "Refund policy question",
+          "What is your refund policy if I cancel in the middle of the billing cycle?",
+          "Billing",
+          "Low",
+          100,
+          "AUTO_ROUTED",
+          "billing-team@example.com",
+          "Billing",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          13,
+          "case-013",
+          "Suspicious login attempt",
+          "I received an alert about a login from another country. I did not travel. Is my account compromised?",
+          null,
+          null,
+          null,
+          "MANUAL_REVIEW",
+          null,
+          "Technical",
+          "High",
+          null,
+          null,
+          false,
+          true,
+        ],
+        [
+          14,
+          "case-014",
+          "Cancel my account",
+          "Please cancel my account at the end of the current billing period.",
+          "Billing",
+          "Low",
+          100,
+          "AUTO_ROUTED",
+          "billing-team@example.com",
+          "Billing",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          15,
+          "case-015",
+          "Webhook signature invalid",
+          "Our endpoint rejects your webhook because the signature header is invalid.",
+          "Technical",
+          "Medium",
+          100,
+          "AUTO_ROUTED",
+          "tech-support@example.com",
+          "Technical",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          16,
+          "case-016",
+          "Mobile app crashes on launch",
+          "The iOS app crashes immediately after the splash screen.",
+          "Technical",
+          "High",
+          95,
+          "AUTO_ROUTED",
+          "tech-oncall@example.com",
+          "Bug",
+          "High",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          17,
+          "case-017",
+          "Dashboard loading slowly",
+          "The dashboard takes more than 30 seconds to load today.",
+          "Technical",
+          "Medium",
+          95,
+          "AUTO_ROUTED",
+          "tech-support@example.com",
+          "Technical",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          18,
+          "case-018",
+          "GDPR data deletion request",
+          "Under GDPR, please delete all personal data associated with my account.",
+          "Billing",
+          "Low",
+          85,
+          "MANUAL_REVIEW",
+          null,
+          "General",
+          "High",
+          true,
+          "sensitive keyword (gdpr)",
+          false,
+          false,
+        ],
+        [
+          19,
+          "case-019",
+          "Annual billing discount",
+          "Do you offer a discount if I pay annually instead of monthly?",
+          "Billing",
+          "Low",
+          100,
+          "AUTO_ROUTED",
+          "billing-team@example.com",
+          "Billing",
+          "Low",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          20,
+          "case-020",
+          "Account locked after failed attempts",
+          "My account was locked after several failed login attempts. Please unlock it.",
+          "Technical",
+          "Low",
+          95,
+          "AUTO_ROUTED",
+          "tech-support@example.com",
+          "Technical",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          21,
+          "case-021",
+          "Increase API rate limit",
+          "We need a higher API rate limit for our production integration.",
+          "Feature",
+          "Low",
+          95,
+          "AUTO_ROUTED",
+          "general-support@example.com",
+          "Feature",
+          "Low",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          22,
+          "case-022",
+          "PDF report has blank page",
+          "The generated PDF report contains a blank page between sections.",
+          "Technical",
+          "Medium",
+          95,
+          "AUTO_ROUTED",
+          "tech-support@example.com",
+          "Bug",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          23,
+          "case-023",
+          "Office hours question",
+          "What are your support office hours on weekends?",
+          "General",
+          "Low",
+          100,
+          "AUTO_ROUTED",
+          "general-support@example.com",
+          "General",
+          "Low",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          24,
+          "case-024",
+          "Payment declined but card is valid",
+          "My payment was declined even though the card works on other sites.",
+          "Billing",
+          "Medium",
+          95,
+          "AUTO_ROUTED",
+          "billing-team@example.com",
+          "Billing",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          25,
+          "case-025",
+          "Zapier integration error",
+          "The Zapier trigger fails with a timeout when a new ticket is created.",
+          "Technical",
+          "Medium",
+          95,
+          "AUTO_ROUTED",
+          "tech-support@example.com",
+          "Technical",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          26,
+          "case-026",
+          "See attached",
+          "See attached.",
+          "General",
+          "Low",
+          85,
+          "MANUAL_REVIEW",
+          null,
+          "General",
+          "Low",
+          true,
+          "ambiguous pattern",
+          false,
+          false,
+        ],
+        [
+          27,
+          "case-027",
+          "Angry refund request",
+          "This is unacceptable. I was charged twice and support ignored me. Refund me now.",
+          "Billing",
+          "High",
+          95,
+          "AUTO_ROUTED",
+          "billing-team@example.com",
+          "Billing",
+          "High",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          28,
+          "case-028",
+          "Feature request: SSO",
+          "We need SAML SSO for our enterprise team.",
+          "Feature",
+          "Low",
+          95,
+          "AUTO_ROUTED",
+          "general-support@example.com",
+          "Feature",
+          "High",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          29,
+          "case-029",
+          "Duplicate notification emails",
+          "I receive the same ticket notification email two or three times.",
+          "Technical",
+          "Low",
+          95,
+          "AUTO_ROUTED",
+          "tech-support@example.com",
+          "Bug",
+          "Medium",
+          false,
+          null,
+          false,
+          false,
+        ],
+        [
+          30,
+          "case-030",
+          "Great product feedback",
+          "Just wanted to say the product is great. No action needed.",
+          "General",
+          "Low",
+          100,
+          "AUTO_ROUTED",
+          "general-support@example.com",
+          "General",
+          "Low",
+          false,
+          null,
+          false,
+          false,
+        ],
+      ];
+      const BASE_TS = "2026-10-31T11:20:00Z";
+      function buildDemo() {
+        return RAW.map((r, i) => {
+          const created = addSec(BASE_TS, i * 60);
+          const t = {
+            id: r[0],
+            external_id: r[1],
+            subject: r[2],
+            body: r[3],
+            category: r[4],
+            urgency: r[5],
+            confidence: r[6],
+            status: r[7],
+            assigned_to: r[8],
+            expected_category: r[9],
+            expected_urgency: r[10],
+            expect_review: r[11],
+            safety_gate: r[12],
+            safety_violation: r[13],
+            error: r[14],
+            customer_email: "customer@example.com",
+            reviewed_by: null,
+            review_decision: null,
+            review_comment: null,
+            ai_summary: r[14]
+              ? "AI_UNAVAILABLE"
+              : "Auto-generated summary for " + r[2].toLowerCase() + ".",
+            created_at: created,
+            updated_at: addSec(created, 14),
+            resolved_at: null,
+            history: [],
+          };
+          t.history = [
+            {
+              action: "CREATED",
+              old_value: null,
+              new_value: "RECEIVED",
+              actor: "webhook",
+              timestamp: created,
+            },
+            {
+              action: "STATUS_CHANGED",
+              old_value: "RECEIVED",
+              new_value: "PROCESSING",
+              actor: "background-worker",
+              timestamp: addSec(created, 8),
+            },
+          ];
+          if (t.error)
+            t.history.push({
+              action: "STATUS_CHANGED",
+              old_value: "PROCESSING",
+              new_value: "MANUAL_REVIEW",
+              actor: "background-worker",
+              timestamp: addSec(created, 14),
+            });
+          else if (t.status === "AUTO_ROUTED")
+            t.history.push({
+              action: "AUTO_ROUTED",
+              old_value: "PROCESSING",
+              new_value: "AUTO_ROUTED",
+              actor: "background-worker",
+              timestamp: addSec(created, 14),
+            });
+          else
+            t.history.push({
+              action: "STATUS_CHANGED",
+              old_value: "PROCESSING",
+              new_value: "MANUAL_REVIEW",
+              actor: "background-worker",
+              timestamp: addSec(created, 14),
+            });
+          return t;
+        });
+      }
+
+      /* ================= STATE ================= */
+      const S = {
+        mode: "demo",
+        tickets: buildDemo(),
+        route: "dashboard",
+        loading: false,
+        error: null,
+        inbox: {
+          q: "",
+          status: "all",
+          category: "all",
+          sort: "created_desc",
+          page: 1,
+          pageSize: 8,
+        },
+        audit: { action: "all", q: "" },
+        live: {
+          url: "",
+          key: "",
+        },
+        drawerId: null,
+        sendBusy: false,
+        actBusy: false,
+      };
+      const SNAPSHOT = JSON.stringify(S.tickets);
+
+      /* ================= CONSTANTS ================= */
+      const CAT_STYLE = {
+        Billing: ["bg-blue-500/15", "text-blue-300", "bg-blue-400", "#3B82F6"],
+        Technical: [
+          "bg-orange-500/15",
+          "text-orange-300",
+          "bg-orange-400",
+          "#F97316",
+        ],
+        Bug: ["bg-red-500/15", "text-red-300", "bg-red-400", "#EF4444"],
+        Feature: [
+          "bg-violet-500/15",
+          "text-violet-300",
+          "bg-violet-400",
+          "#8B5CF6",
+        ],
+        General: [
+          "bg-slate-500/15",
+          "text-slate-300",
+          "bg-slate-400",
+          "#94A3B8",
+        ],
+      };
+      const ST_STYLE = {
+        RECEIVED: ["bg-slate-500/15", "text-slate-300", "#64748B"],
+        PROCESSING: ["bg-blue-500/15", "text-blue-300", "#3B82F6"],
+        AUTO_ROUTED: ["bg-emerald-500/15", "text-emerald-300", "#10B981"],
+        MANUAL_REVIEW: ["bg-amber-500/15", "text-amber-300", "#F59E0B"],
+        APPROVED: ["bg-green-600/15", "text-green-300", "#16A34A"],
+        REJECTED: ["bg-red-500/15", "text-red-300", "#EF4444"],
+        ESCALATED: ["bg-purple-500/15", "text-purple-300", "#A855F7"],
+        RESOLVED: ["bg-slate-400/15", "text-slate-300", "#94A3B8"],
+      };
+      const URG_ICON = {
+        High: '<span class="text-red-400">🔥</span>',
+        Medium: '<span class="text-amber-400">⚡</span>',
+        Low: '<span class="text-slate-400">🍃</span>',
+      };
+
+      /* ================= METRICS (computed, single source of truth) ================= */
+      function computeMetrics(ts) {
+        const classified = ts.filter((t) => !t.error && t.category);
+        const errs = ts.filter((t) => t.error);
+        const manual = ts.filter((t) => t.status === "MANUAL_REVIEW");
+        const auto = ts.filter((t) => t.status === "AUTO_ROUTED");
+        const catOk = classified.filter(
+          (t) => t.category === t.expected_category,
+        ).length;
+        const urgOk = classified.filter(
+          (t) => t.urgency === t.expected_urgency,
+        ).length;
+        const viol = ts.filter((t) => t.safety_violation);
+        const gates = ts.filter(
+          (t) =>
+            t.safety_gate &&
+            !t.safety_violation &&
+            t.status === "MANUAL_REVIEW",
+        );
+        const confs = classified
+          .map((t) => t.confidence)
+          .filter((c) => c != null);
+        const secs = ts
+          .filter((t) => t.resolved_at)
+          .map(
+            (t) => (new Date(t.resolved_at) - new Date(t.created_at)) / 1000,
+          );
+        return {
+          total: ts.length,
+          classified: classified.length,
+          errors: errs.length,
+          auto: auto.length,
+          manual: manual.length,
+          automation_rate: pct(auto.length, classified.length + errs.length),
+          cat_accuracy: pct(catOk, classified.length),
+          urg_accuracy: pct(urgOk, classified.length),
+          cat_ok: catOk,
+          urg_ok: urgOk,
+          avg_confidence: confs.length
+            ? confs.reduce((a, b) => a + b, 0) / confs.length
+            : 0,
+          violations: viol.length,
+          gates: gates.length,
+          resolved: ts.filter((t) => t.status === "RESOLVED").length,
+          avg_resolve_s: secs.length
+            ? secs.reduce((a, b) => a + b, 0) / secs.length
+            : null,
+        };
+      }
+
+      /* ================= TOASTS ================= */
+      let toastSeq = 0;
+      function toast(msg, kind = "info") {
+        const id = ++toastSeq;
+        const colors = {
+          info: "border-accent/40 text-slate-200",
+          success: "border-emerald-500/40 text-emerald-200",
+          error: "border-red-500/40 text-red-200",
+          warning: "border-amber-500/40 text-amber-200",
+        };
+        const box = $("toasts");
+        const el = document.createElement("div");
+        el.className =
+          "card rounded-lg px-4 py-2.5 shadow-2xl max-w-sm text-xs mono border " +
+          colors[kind];
+        el.dataset.toast = id;
+        el.textContent = msg;
+        box.appendChild(el);
+        while (box.children.length > 3) box.removeChild(box.firstChild);
+        setTimeout(() => {
+          el.style.opacity = "0";
+          el.style.transition = "opacity .3s";
+          setTimeout(() => el.remove(), 320);
+        }, 4000);
+      }
+
+      /* ================= SHARED UI ================= */
+      function badgeStatus(st) {
+        const s = ST_STYLE[st] || ["bg-red-600/15", "text-red-300", "#EF4444"];
+        const dot =
+          st === "PROCESSING"
+            ? '<span class="w-1.5 h-1.5 rounded-full bg-blue-400 pulse-dot"></span>'
+            : "";
+        return (
+          '<span class="badge ' +
+          s[0] +
+          " " +
+          s[1] +
+          ' inline-flex items-center gap-1.5">' +
+          dot +
+          esc(st) +
+          "</span>"
+        );
+      }
+      function badgeCat(c) {
+        if (!c)
+          return '<span class="badge bg-red-600/15 text-red-300">UNCLASSIFIED</span>';
+        const s = CAT_STYLE[c] || CAT_STYLE.General;
+        return (
+          '<span class="badge ' + s[0] + " " + s[1] + '">' + esc(c) + "</span>"
+        );
+      }
+      function confCell(c) {
+        if (c == null)
+          return '<span class="text-red-400 text-[11px] mono">ERR</span>';
+        const col = c >= 80 ? "bg-emerald-500" : "bg-amber-500";
+        return (
+          '<div class="flex items-center gap-2"><div class="w-16 h-1 bg-bg-900 rounded-full overflow-hidden"><div class="h-full ' +
+          col +
+          '" style="width:' +
+          c +
+          '%"></div></div><span class="text-xs text-slate-300 mono tabular">' +
+          c +
+          "</span></div>"
+        );
+      }
+      function emptyState(title, sub, actionHtml) {
+        return (
+          '<div class="flex flex-col items-center justify-center py-16 text-center">' +
+          '<div class="w-12 h-12 rounded-xl bg-bg-900 border border-line flex items-center justify-center mb-3 text-slate-500">' +
+          '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>' +
+          '<div class="text-sm font-medium text-slate-300">' +
+          esc(title) +
+          "</div>" +
+          '<div class="text-xs text-slate-500 mt-1 max-w-xs">' +
+          esc(sub) +
+          "</div>" +
+          (actionHtml ? '<div class="mt-4">' + actionHtml + "</div>" : "") +
+          "</div>"
+        );
+      }
+      function errorState(msg) {
+        return (
+          '<div class="flex flex-col items-center justify-center py-16 text-center">' +
+          '<div class="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center mb-3 text-red-400">' +
+          '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>' +
+          '<div class="text-sm font-medium text-red-300">Backend unreachable</div>' +
+          '<div class="text-xs text-slate-500 mt-1 max-w-sm mono">' +
+          esc(msg) +
+          "</div>" +
+          '<button class="btn bg-accent text-white mt-4" data-action="retry">Retry connection</button>' +
+          '<button class="btn text-slate-400 mt-2" data-action="set-mode" data-mode="demo">Back to demo data</button></div>'
+        );
+      }
+      function skeletonRows(n) {
+        let r = "";
+        for (let i = 0; i < n; i++)
+          r +=
+            '<tr class="border-b border-line/50"><td class="px-4 py-3"><div class="sk h-3 w-8"></div></td><td class="px-4 py-3"><div class="sk h-3 w-48 mb-2"></div><div class="sk h-2 w-24"></div></td><td class="px-4 py-3"><div class="sk h-4 w-16"></div></td><td class="px-4 py-3"><div class="sk h-3 w-6"></div></td><td class="px-4 py-3"><div class="sk h-2 w-20"></div></td><td class="px-4 py-3"><div class="sk h-4 w-24"></div></td><td class="px-4 py-3"><div class="sk h-3 w-10 ml-auto"></div></td></tr>';
+        return r;
+      }
+
+      /* ================= SHELL ================= */
+      function renderShell() {
+        $("app").innerHTML =
+          '<div class="flex min-h-screen">' +
+          '<aside class="w-16 md:w-60 flex-shrink-0 border-r border-line bg-bg-800 flex flex-col">' +
+          '<div class="p-3 md:p-5 border-b border-line"><div class="flex items-center gap-2.5">' +
+          '<div class="w-8 h-8 rounded-lg bg-accent/20 border border-accent/40 flex items-center justify-center flex-shrink-0">' +
+          '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-accent"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>' +
+          '<div class="hidden md:block"><div class="text-sm font-semibold text-white">TicketPilot</div><div class="text-[11px] text-slate-500 mono">AI · v0.1.0</div></div>' +
+          "</div></div>" +
+          '<nav class="flex-1 py-3">' +
+          '<div class="hidden md:block px-5 text-[10px] uppercase tracking-wider text-slate-500 mb-2">Operations</div>' +
+          navItem(
+            "dashboard",
+            "Dashboard",
+            '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
+            "",
+          ) +
+          navItem(
+            "inbox",
+            "Inbox",
+            '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+            '<span id="nav-inbox" class="ml-auto text-[10px] bg-slate-500/20 text-slate-300 px-1.5 py-0.5 rounded mono hidden md:inline">0</span>',
+          ) +
+          navItem(
+            "queue",
+            "Review Queue",
+            '<path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>',
+            '<span id="nav-queue" class="ml-auto text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded mono hidden md:inline">0</span>',
+          ) +
+          '<div class="hidden md:block px-5 text-[10px] uppercase tracking-wider text-slate-500 mb-2 mt-5">System</div>' +
+          navItem(
+            "metrics",
+            "Metrics",
+            '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+            "",
+          ) +
+          navItem(
+            "audit",
+            "Audit Log",
+            '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+            "",
+          ) +
+          navItem(
+            "settings",
+            "Settings",
+            '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+            "",
+          ) +
+          "</nav>" +
+          '<div class="p-3 md:p-4 border-t border-line hidden md:block">' +
+          '<a href="https://github.com/NormalGuyhehe/ticketspilot-ai" target="_blank" rel="noopener noreferrer" class="block text-xs text-accent-soft hover:text-white mb-3">View GitHub source ↗</a>' +
+           '<div class="flex items-center gap-2 text-xs text-slate-400"><div class="w-2 h-2 rounded-full bg-emerald-500"></div><span class="mono" id="llm-label">Demo simulation</span></div>' +
+          '<div class="text-[10px] text-slate-500 mt-1 mono">No AI API required</div>' +
+          "</div>" +
+          "</aside>" +
+          '<main class="flex-1 flex flex-col min-w-0">' +
+          '<header class="h-14 border-b border-line bg-bg-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0">' +
+          '<div class="min-w-0"><h1 class="text-sm font-semibold text-white" id="page-title">Dashboard</h1>' +
+          '<div class="text-[11px] text-slate-500 mono truncate" id="page-sub"></div></div>' +
+          '<div class="flex items-center gap-2 md:gap-3 flex-shrink-0">' +
+          '<span class="hidden lg:inline text-[10px] text-amber-300 border border-amber-400/30 bg-amber-400/10 px-2 py-1 rounded mono">SAMPLE DATA</span>' +
+           '<div class="flex items-center gap-1 bg-bg-700 border border-line rounded-lg p-1">' +
+          '<button id="mode-demo" class="btn px-2.5 py-1 text-[11px] mono" data-action="set-mode" data-mode="demo">DEMO</button>' +
+          '<button id="mode-live" class="btn px-2.5 py-1 text-[11px] mono" disabled title="Live backend unavailable in public demo">LIVE</button>' +
+          "</div>" +
+          '<button class="btn bg-accent hover:bg-accent/90 text-white hidden sm:flex items-center gap-1.5" data-action="open-send">' +
+          '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Send Ticket</button>' +
+          "</div>" +
+          "</header>" +
+          '<div class="flex-1 overflow-y-auto scrollbar-thin p-4 md:p-6" id="view"></div>' +
+          "</main></div>";
+      }
+      function navItem(route, label, icon, extra) {
+        return (
+          '<a href="#/' +
+          route +
+          '" class="nav-item flex items-center gap-3 px-3 md:px-5 py-2.5 text-sm text-slate-400 hover:text-white" data-route="' +
+          route +
+          '" title="' +
+          label +
+          '">' +
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="flex-shrink-0">' +
+          icon +
+          "</svg>" +
+          '<span class="hidden md:inline">' +
+          label +
+          "</span>" +
+          extra +
+          "</a>"
+        );
+      }
+      function updateDynamic() {
+        const m = computeMetrics(S.tickets);
+        const ni = $("nav-inbox"),
+          nq = $("nav-queue");
+        if (ni) {
+          ni.textContent = S.tickets.length;
+        }
+        if (nq) {
+          nq.textContent = m.manual;
+        }
+        const md = $("mode-demo"),
+          ml = $("mode-live");
+        md.className =
+          "btn px-2.5 py-1 text-[11px] mono " +
+          (S.mode === "demo" ? "bg-accent text-white" : "text-slate-400");
+        ml.className =
+          "btn px-2.5 py-1 text-[11px] mono " +
+          (S.mode === "live" ? "bg-accent text-white" : "text-slate-400");
+        const titles = {
+          dashboard: "Operations Dashboard",
+          inbox: "Inbox",
+          queue: "Review Queue",
+          metrics: "Metrics & Acceptance",
+          audit: "Audit Log",
+          settings: "Settings",
+        };
+        $("page-title").textContent = titles[S.route] || "Dashboard";
+        $("page-sub").textContent = S.loading
+          ? "loading…"
+          : S.mode === "demo"
+            ? S.tickets.length + " tickets · demo dataset (batch run ba839b73)"
+            : S.tickets.length + " tickets · live @ " + S.live.url;
+        $("llm-label").textContent =
+          S.mode === "live" ? "live backend" : "Demo simulation";
+        document
+          .querySelectorAll(".nav-item")
+          .forEach((n) =>
+            n.classList.toggle("active", n.dataset.route === S.route),
+          );
+      }
+
+      /* ================= VIEWS ================= */
+      function viewDashboard() {
+        const m = computeMetrics(S.tickets);
+        const cats = {};
+        S.tickets
+          .filter((t) => t.category)
+          .forEach((t) => (cats[t.category] = (cats[t.category] || 0) + 1));
+        const totalCat = Object.values(cats).reduce((a, b) => a + b, 0) || 1;
+        const catRows = Object.entries(cats)
+          .sort((a, b) => b[1] - a[1])
+          .map(([c, n]) => {
+            const s = CAT_STYLE[c] || CAT_STYLE.General;
+            const p = pct(n, totalCat);
+            return (
+              '<div><div class="flex justify-between text-xs mb-1"><span class="' +
+              s[1] +
+              ' flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full ' +
+              s[2] +
+              '"></span>' +
+              esc(c) +
+              '</span><span class="text-slate-400 mono tabular">' +
+              n +
+              ' <span class="text-slate-500">(' +
+              p.toFixed(1) +
+              '%)</span></span></div><div class="h-1.5 bg-bg-900 rounded-full overflow-hidden"><div class="h-full" style="width:' +
+              p +
+              "%;background:" +
+              s[3] +
+              '"></div></div></div>'
+            );
+          })
+          .join("");
+        const buckets = { "90-100": 0, "80-89": 0, "70-79": 0, "<70": 0 };
+        S.tickets
+          .filter((t) => t.confidence != null)
+          .forEach((t) => {
+            if (t.confidence >= 90) buckets["90-100"]++;
+            else if (t.confidence >= 80) buckets["80-89"]++;
+            else if (t.confidence >= 70) buckets["70-79"]++;
+            else buckets["<70"]++;
+          });
+        const bmax = Math.max(...Object.values(buckets), 1);
+        const bcol = {
+          "90-100": "#10B981",
+          "80-89": "#6366F1",
+          "70-79": "#F59E0B",
+          "<70": "#EF4444",
+        };
+        const confRows = Object.entries(buckets)
+          .map(
+            ([r, n]) =>
+              '<div class="flex items-center gap-3"><div class="w-14 text-[11px] text-slate-400 mono tabular text-right">' +
+              r +
+              '</div><div class="flex-1 h-5 bg-bg-900 rounded overflow-hidden relative"><div class="h-full" style="width:' +
+              pct(n, bmax) +
+              "%;background:" +
+              bcol[r] +
+              '99"></div><div class="absolute inset-0 flex items-center px-2 text-[10px] text-white font-medium">' +
+              n +
+              "</div></div></div>",
+          )
+          .join("");
+        const donut = (() => {
+          const order = [
+            "AUTO_ROUTED",
+            "MANUAL_REVIEW",
+            "RESOLVED",
+            "APPROVED",
+            "REJECTED",
+            "ESCALATED",
+            "PROCESSING",
+            "RECEIVED",
+          ];
+          let acc = 0;
+          const stops = [];
+          order.forEach((st) => {
+            const n = S.tickets.filter((t) => t.status === st).length;
+            if (!n) return;
+            const p = pct(n, S.tickets.length);
+            stops.push(
+              ST_STYLE[st][2] +
+                " " +
+                acc.toFixed(2) +
+                "% " +
+                (acc + p).toFixed(2) +
+                "%",
+            );
+            acc += p;
+          });
+          return stops.length
+            ? "conic-gradient(" + stops.join(",") + ")"
+            : "#1E293B";
+        })();
+        const legend = [
+          "AUTO_ROUTED",
+          "MANUAL_REVIEW",
+          "RESOLVED",
+          "APPROVED",
+          "REJECTED",
+          "ESCALATED",
+        ]
+          .filter((st) => S.tickets.some((t) => t.status === st))
+          .map(
+            (st) =>
+              '<div class="flex items-center gap-1.5 text-[11px] text-slate-400"><span class="w-2 h-2 rounded-full" style="background:' +
+              ST_STYLE[st][2] +
+              '"></span>' +
+              st +
+              ' <span class="mono text-slate-500">' +
+              S.tickets.filter((t) => t.status === st).length +
+              "</span></div>",
+          )
+          .join("");
+        const events = S.tickets
+          .flatMap((t) =>
+            t.history.map((h) => ({ ...h, tid: t.id, subj: t.subject })),
+          )
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+          .slice(0, 8);
+        const actRows = events
+          .map(
+            (e) =>
+              '<div class="flex items-center gap-3 py-2 border-b border-line/40 last:border-0"><span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:' +
+              (ST_STYLE[e.new_value]?.[2] || "#64748B") +
+              '"></span><div class="min-w-0 flex-1"><div class="text-xs text-slate-200 truncate">#' +
+              e.tid +
+              " " +
+              esc(e.subj) +
+              '</div><div class="text-[10px] text-slate-500 mono">' +
+              esc(e.action) +
+              " · " +
+              esc(e.actor) +
+              '</div></div><div class="text-[10px] text-slate-500 mono flex-shrink-0">' +
+              fmtTime(e.timestamp) +
+              "</div></div>",
+          )
+          .join("");
+        return (
+          '<div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">' +
+          kpi(
+            "Auto-Routing Rate",
+            m.automation_rate.toFixed(2) + "%",
+            "text-white",
+            pct(m.automation_rate, 100),
+            "#10B981",
+            m.auto + " of " + m.total + " sample tickets",
+          ) +
+          kpi(
+            "Avg AI Confidence",
+            m.avg_confidence.toFixed(1) + " / 100",
+            "text-white",
+            m.avg_confidence,
+            "#6366F1",
+            "threshold: 80",
+          ) +
+          kpi(
+            "Pending Review",
+            String(m.manual),
+            "text-amber-400",
+            pct(m.manual, Math.max(m.total, 1)),
+            "#F59E0B",
+            m.gates + " safety-gate · " + m.violations + " violation",
+          ) +
+          kpi(
+            "Category Accuracy",
+            m.cat_accuracy.toFixed(2) + "%",
+            "text-white",
+            m.cat_accuracy,
+            "#0EA5E9",
+            m.cat_ok + " / " + m.classified + " vs expected",
+          ) +
+          "</div>" +
+          '<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">' +
+          '<div class="card rounded-xl p-5"><div class="flex items-center justify-between mb-4"><div class="text-sm font-medium text-white">Classification by Category</div><div class="text-[10px] text-slate-500 mono">' +
+          m.classified +
+          ' classified</div></div><div class="space-y-2.5">' +
+          catRows +
+          "</div></div>" +
+          '<div class="card rounded-xl p-5"><div class="flex items-center justify-between mb-4"><div class="text-sm font-medium text-white">Confidence Distribution</div><div class="text-[10px] text-slate-500 mono">classified only</div></div><div class="space-y-2.5">' +
+          confRows +
+          "</div></div>" +
+          '<div class="card rounded-xl p-5"><div class="text-sm font-medium text-white mb-4">Status Split</div><div class="flex items-center gap-5"><div class="relative w-28 h-28 rounded-full flex-shrink-0" style="background:' +
+          donut +
+          '"><div class="absolute inset-3 rounded-full bg-bg-700 flex items-center justify-center"><div class="text-center"><div class="text-lg font-bold text-white tabular">' +
+          m.total +
+          '</div><div class="text-[9px] text-slate-500 mono">tickets</div></div></div></div><div class="space-y-1.5">' +
+          legend +
+          "</div></div></div>" +
+          "</div>" +
+          '<div class="card rounded-xl p-5"><div class="text-sm font-medium text-white mb-2">Recent Activity</div>' +
+          actRows +
+          "</div>"
+        );
+      }
+      function kpi(label, value, vcol, barPct, barCol, meta) {
+        return (
+          '<div class="card rounded-xl p-4"><div class="text-[11px] uppercase tracking-wider text-slate-500 mb-2">' +
+          esc(label) +
+          "</div>" +
+          '<div class="text-2xl font-bold tabular ' +
+          vcol +
+          '">' +
+          esc(value) +
+          "</div>" +
+          '<div class="mt-3 h-1.5 bg-bg-900 rounded-full overflow-hidden"><div class="h-full" style="width:' +
+          clamp(barPct, 0, 100) +
+          "%;background:" +
+          barCol +
+          '"></div></div>' +
+          '<div class="text-[10px] text-slate-500 mt-2 mono">' +
+          esc(meta) +
+          "</div></div>"
+        );
+      }
+
+      function filteredTickets() {
+        let list = [...S.tickets];
+        const f = S.inbox;
+        if (f.status !== "all")
+          list =
+            f.status === "ERROR"
+              ? list.filter((t) => t.error)
+              : list.filter((t) => t.status === f.status);
+        if (f.category !== "all")
+          list = list.filter((t) => t.category === f.category);
+        if (f.q) {
+          const q = f.q.toLowerCase();
+          list = list.filter((t) =>
+            (t.subject + " " + t.external_id + " " + t.body)
+              .toLowerCase()
+              .includes(q),
+          );
+        }
+        const sorters = {
+          created_desc: (a, b) =>
+            new Date(b.created_at) - new Date(a.created_at),
+          created_asc: (a, b) =>
+            new Date(a.created_at) - new Date(b.created_at),
+          conf_desc: (a, b) => (b.confidence ?? -1) - (a.confidence ?? -1),
+          conf_asc: (a, b) => (a.confidence ?? 999) - (b.confidence ?? 999),
+          subject_asc: (a, b) => a.subject.localeCompare(b.subject),
+        };
+        list.sort(sorters[f.sort] || sorters.created_desc);
+        return list;
+      }
+      function viewInbox() {
+        const counts = {
+          all: S.tickets.length,
+          MANUAL_REVIEW: S.tickets.filter((t) => t.status === "MANUAL_REVIEW")
+            .length,
+          AUTO_ROUTED: S.tickets.filter((t) => t.status === "AUTO_ROUTED")
+            .length,
+          ERROR: S.tickets.filter((t) => t.error).length,
+        };
+        const cats = [
+          ...new Set(S.tickets.map((t) => t.category).filter(Boolean)),
+        ].sort();
+        return (
+          '<div class="card rounded-xl overflow-hidden">' +
+          '<div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line">' +
+          '<input id="inbox-search" class="inp max-w-xs" placeholder="Search subject, id, body…" value="' +
+          esc(S.inbox.q) +
+          '"/>' +
+          '<select id="inbox-cat" class="inp w-auto">' +
+          cats
+            .map(
+              (c) =>
+                "<option " +
+                (S.inbox.category === c ? "selected" : "") +
+                ">" +
+                esc(c) +
+                "</option>",
+            )
+            .join("") +
+          "</select>".replace(
+            "<option",
+            '<option value="all" ' +
+              (S.inbox.category === "all" ? "selected" : "") +
+              ">All categories</option><option",
+          ) +
+          '<select id="inbox-sort" class="inp w-auto"><option value="created_desc"' +
+          (S.inbox.sort === "created_desc" ? " selected" : "") +
+          '>Newest first</option><option value="created_asc"' +
+          (S.inbox.sort === "created_asc" ? " selected" : "") +
+          '>Oldest first</option><option value="conf_desc"' +
+          (S.inbox.sort === "conf_desc" ? " selected" : "") +
+          '>Confidence ↓</option><option value="conf_asc"' +
+          (S.inbox.sort === "conf_asc" ? " selected" : "") +
+          '>Confidence ↑</option><option value="subject_asc"' +
+          (S.inbox.sort === "subject_asc" ? " selected" : "") +
+          ">Subject A–Z</option></select>" +
+          '<div class="flex gap-1 ml-auto" id="inbox-filters">' +
+          fbtn("all", "ALL", counts.all) +
+          fbtn("MANUAL_REVIEW", "MANUAL", counts.MANUAL_REVIEW) +
+          fbtn("AUTO_ROUTED", "AUTO", counts.AUTO_ROUTED) +
+          fbtn("ERROR", "ERR", counts.ERROR) +
+          "</div>" +
+          "</div>" +
+          '<div class="overflow-x-auto scrollbar-thin"><table class="w-full text-sm"><thead class="bg-bg-800 border-b border-line"><tr class="text-left text-[11px] uppercase tracking-wider text-slate-500">' +
+          '<th class="px-4 py-2.5 w-14 mono">#</th><th class="px-4 py-2.5">Subject</th><th class="px-4 py-2.5 w-28">Category</th><th class="px-4 py-2.5 w-16 text-center">Urg</th><th class="px-4 py-2.5 w-32">Confidence</th><th class="px-4 py-2.5 w-36">Status</th><th class="px-4 py-2.5 w-20 text-right"></th></tr></thead>' +
+          '<tbody id="inbox-body"></tbody></table></div>' +
+          '<div id="inbox-pager" class="flex items-center justify-between px-4 py-2.5 border-t border-line"></div>' +
+          "</div>"
+        );
+      }
+      function fbtn(key, label, n) {
+        const on = S.inbox.status === key;
+        return (
+          '<button class="btn text-[11px] mono px-2 py-1 ' +
+          (on
+            ? "bg-accent text-white"
+            : "text-slate-400 bg-bg-900 border border-line") +
+          '" data-action="inbox-filter" data-status="' +
+          key +
+          '">' +
+          label +
+          ' <span class="opacity-60">' +
+          n +
+          "</span></button>"
+        );
+      }
+      function renderInboxBody() {
+        const body = $("inbox-body"),
+          pager = $("inbox-pager");
+        if (!body) return;
+        if (S.loading) {
+          body.innerHTML = skeletonRows(6);
+          pager.innerHTML = "";
+          return;
+        }
+        if (S.error && S.mode === "live") {
+          body.innerHTML =
+            '<tr><td colspan="7">' + errorState(S.error) + "</td></tr>";
+          pager.innerHTML = "";
+          return;
+        }
+        const list = filteredTickets();
+        const pages = Math.max(1, Math.ceil(list.length / S.inbox.pageSize));
+        S.inbox.page = clamp(S.inbox.page, 1, pages);
+        const start = (S.inbox.page - 1) * S.inbox.pageSize;
+        const slice = list.slice(start, start + S.inbox.pageSize);
+        if (!slice.length) {
+          body.innerHTML =
+            '<tr><td colspan="7">' +
+            emptyState(
+              "No tickets match",
+              "Try clearing search or filters.",
+              '<button class="btn bg-bg-900 border border-line text-slate-300" data-action="inbox-clear">Clear filters</button>',
+            ) +
+            "</td></tr>";
+          pager.innerHTML =
+            '<div class="text-[11px] text-slate-500 mono">0 results</div><div></div>';
+          return;
+        }
+        body.innerHTML = slice
+          .map(
+            (t) =>
+              '<tr class="hover-row cursor-pointer border-b border-line/50" data-action="open-ticket" data-id="' +
+              t.id +
+              '">' +
+              '<td class="px-4 py-3 text-xs text-slate-500 mono tabular">#' +
+              t.id +
+              "</td>" +
+              '<td class="px-4 py-3"><div class="text-sm text-white truncate max-w-[320px]" title="' +
+              esc(t.subject) +
+              '">' +
+              esc(t.subject) +
+              '</div><div class="text-[11px] text-slate-500 mono mt-0.5">' +
+              esc(t.external_id) +
+              " · " +
+              fmtTime(t.created_at) +
+              "</div></td>" +
+              '<td class="px-4 py-3">' +
+              badgeCat(t.category) +
+              "</td>" +
+              '<td class="px-4 py-3 text-center">' +
+              (URG_ICON[t.urgency] || '<span class="text-slate-600">—</span>') +
+              "</td>" +
+              '<td class="px-4 py-3">' +
+              confCell(t.confidence) +
+              "</td>" +
+              '<td class="px-4 py-3">' +
+              badgeStatus(t.status) +
+              "</td>" +
+              '<td class="px-4 py-3 text-right"><span class="text-accent text-xs font-medium">View →</span></td></tr>',
+          )
+          .join("");
+        pager.innerHTML =
+          '<div class="text-[11px] text-slate-500 mono">Showing ' +
+          (start + 1) +
+          "–" +
+          Math.min(start + S.inbox.pageSize, list.length) +
+          " of " +
+          list.length +
+          "</div>" +
+          '<div class="flex items-center gap-1">' +
+          '<button class="btn text-[11px] mono px-2 py-1 bg-bg-900 border border-line text-slate-300" data-action="inbox-page" data-page="' +
+          (S.inbox.page - 1) +
+          '"' +
+          (S.inbox.page <= 1 ? " disabled" : "") +
+          ">← Prev</button>" +
+          '<span class="text-[11px] text-slate-400 mono px-2">page ' +
+          S.inbox.page +
+          " / " +
+          pages +
+          "</span>" +
+          '<button class="btn text-[11px] mono px-2 py-1 bg-bg-900 border border-line text-slate-300" data-action="inbox-page" data-page="' +
+          (S.inbox.page + 1) +
+          '"' +
+          (S.inbox.page >= pages ? " disabled" : "") +
+          ">Next →</button>" +
+          "</div>";
+      }
+
+      function viewQueue() {
+        if (S.loading)
+          return (
+            '<div class="card rounded-xl p-5">' + skeletonCards(3) + "</div>"
+          );
+        if (S.error && S.mode === "live")
+          return (
+            '<div class="card rounded-xl">' + errorState(S.error) + "</div>"
+          );
+        const q = S.tickets.filter((t) => t.status === "MANUAL_REVIEW");
+        if (!q.length)
+          return (
+            '<div class="card rounded-xl">' +
+            emptyState(
+              "Queue is clear 🎉",
+              "No tickets awaiting human review. Safety gates routed everything confidently or the inbox is empty.",
+            ) +
+            "</div>"
+          );
+        return (
+          '<div class="space-y-4">' +
+          q
+            .map(
+              (t) =>
+                '<div class="card rounded-xl p-5">' +
+                '<div class="flex flex-wrap items-start justify-between gap-3 mb-3">' +
+                '<div class="min-w-0"><div class="text-[11px] text-slate-500 mono mb-1">#' +
+                t.id +
+                " · " +
+                esc(t.external_id) +
+                " · " +
+                fmtTime(t.created_at) +
+                "</div>" +
+                '<div class="text-sm font-semibold text-white">' +
+                esc(t.subject) +
+                "</div></div>" +
+                '<div class="flex gap-2 flex-shrink-0">' +
+                badgeCat(t.category) +
+                badgeStatus(t.status) +
+                "</div>" +
+                "</div>" +
+                '<div class="text-sm text-slate-300 bg-bg-900 border border-line rounded-lg p-3 mb-3">' +
+                esc(t.body) +
+                "</div>" +
+                '<div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">' +
+                '<div class="text-xs"><span class="text-slate-500">AI summary:</span> <span class="text-slate-300">' +
+                esc(t.ai_summary || "—") +
+                "</span></div>" +
+                '<div class="text-xs"><span class="text-slate-500">Confidence:</span> ' +
+                (t.confidence != null
+                  ? '<span class="mono text-white">' +
+                    t.confidence +
+                    "/100</span>"
+                  : '<span class="text-red-400 mono">ERR</span>') +
+                (t.safety_gate
+                  ? ' · <span class="text-amber-400">gate: ' +
+                    esc(t.safety_gate) +
+                    "</span>"
+                  : "") +
+                (t.error
+                  ? ' · <span class="text-red-400">AI failed — reprocess available</span>'
+                  : "") +
+                "</div>" +
+                "</div>" +
+                '<div class="flex flex-wrap gap-2">' +
+                (t.error
+                  ? '<button class="btn bg-accent text-white" data-action="act" data-act="reprocess" data-id="' +
+                    t.id +
+                    '">↻ Reprocess AI</button>'
+                  : '<button class="btn bg-emerald-500 hover:bg-emerald-600 text-white" data-action="act" data-act="approve" data-id="' +
+                    t.id +
+                    '">✓ Approve</button>' +
+                    '<button class="btn bg-red-500 hover:bg-red-600 text-white" data-action="act" data-act="reject" data-id="' +
+                    t.id +
+                    '">✗ Reject</button>' +
+                    '<button class="btn bg-bg-900 border border-line text-slate-300 hover:border-accent" data-action="act" data-act="escalate" data-id="' +
+                    t.id +
+                    '">⬆ Escalate</button>') +
+                '<button class="btn text-slate-400 ml-auto" data-action="open-ticket" data-id="' +
+                t.id +
+                '">Details →</button>' +
+                "</div>" +
+                "</div>",
+            )
+            .join("") +
+          "</div>"
+        );
+      }
+      function skeletonCards(n) {
+        let r = "";
+        for (let i = 0; i < n; i++) r += '<div class="sk h-40 mb-4"></div>';
+        return r;
+      }
+
+      function viewMetrics() {
+        const m = computeMetrics(S.tickets);
+        const rows = S.tickets
+          .map((t) => {
+            const cp = t.error ? null : t.category === t.expected_category;
+            const up = t.error ? null : t.urgency === t.expected_urgency;
+            const sp =
+              t.expect_review == null
+                ? null
+                : t.expect_review
+                  ? t.status === "MANUAL_REVIEW"
+                  : t.status !== "MANUAL_REVIEW" || true;
+            const safe = t.expect_review ? t.status === "MANUAL_REVIEW" : true;
+            const icon = (v) =>
+              v == null
+                ? '<span class="text-slate-600">—</span>'
+                : v
+                  ? '<span class="text-emerald-400">✓</span>'
+                  : '<span class="text-red-400">✗</span>';
+            return (
+              '<tr class="border-b border-line/40 hover-row cursor-pointer" data-action="open-ticket" data-id="' +
+              t.id +
+              '">' +
+              '<td class="px-3 py-2 mono text-xs text-slate-500">' +
+              esc(t.external_id) +
+              "</td>" +
+              '<td class="px-3 py-2 text-xs text-slate-200 truncate max-w-[220px]">' +
+              esc(t.subject) +
+              "</td>" +
+              '<td class="px-3 py-2 text-xs">' +
+              esc(t.expected_category || "—") +
+              " → " +
+              esc(t.category || "ERR") +
+              "</td>" +
+              '<td class="px-3 py-2 text-center">' +
+              icon(cp) +
+              "</td>" +
+              '<td class="px-3 py-2 text-xs">' +
+              esc(t.expected_urgency || "—") +
+              " → " +
+              esc(t.urgency || "ERR") +
+              "</td>" +
+              '<td class="px-3 py-2 text-center">' +
+              icon(up) +
+              "</td>" +
+              '<td class="px-3 py-2 text-center">' +
+              icon(t.expect_review ? safe : null) +
+              "</td>" +
+              '<td class="px-3 py-2">' +
+              badgeStatus(t.status) +
+              "</td></tr>"
+            );
+          })
+          .join("");
+        return (
+          '<div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">' +
+          kpi(
+            "Category Accuracy",
+            m.cat_accuracy.toFixed(2) + "%",
+            "text-white",
+            m.cat_accuracy,
+            "#0EA5E9",
+            m.cat_ok + " / " + m.classified + " correct",
+          ) +
+          kpi(
+            "Urgency Accuracy",
+            m.urg_accuracy.toFixed(2) + "%",
+            "text-white",
+            m.urg_accuracy,
+            "#6366F1",
+            m.urg_ok + " / " + m.classified + " correct",
+          ) +
+          kpi(
+            "Safety Violations",
+            String(m.violations),
+            m.violations ? "text-red-400" : "text-emerald-400",
+            m.violations ? 100 : 0,
+            "#EF4444",
+            "ambiguous auto-routed",
+          ) +
+          kpi(
+            "Error Cases",
+            String(m.errors),
+            m.errors ? "text-amber-400" : "text-emerald-400",
+            pct(m.errors, m.total),
+            "#F59E0B",
+            "graceful degradation",
+          ) +
+          "</div>" +
+          '<div class="card rounded-xl overflow-hidden mb-6"><div class="px-4 py-3 border-b border-line text-sm font-medium text-white">Per-Case Acceptance Report <span class="text-[10px] text-slate-500 mono ml-2">expected vs actual (batch suite)</span></div>' +
+          '<div class="overflow-x-auto scrollbar-thin"><table class="w-full text-sm"><thead class="bg-bg-800 border-b border-line"><tr class="text-left text-[11px] uppercase tracking-wider text-slate-500">' +
+          '<th class="px-3 py-2 mono">Case</th><th class="px-3 py-2">Subject</th><th class="px-3 py-2">Category</th><th class="px-3 py-2 w-10 text-center">Ok</th><th class="px-3 py-2">Urgency</th><th class="px-3 py-2 w-10 text-center">Ok</th><th class="px-3 py-2 w-14 text-center">Safe</th><th class="px-3 py-2 w-36">Status</th></tr></thead><tbody>' +
+          rows +
+          "</tbody></table></div></div>" +
+          '<div class="text-[11px] text-slate-500 mono">Source: scripts/batch_classification_check.py · run ba839b73 · thresholds: accuracy ≥ 80%, safety violations = 0</div>'
+        );
+      }
+
+      function viewAudit() {
+        const all = S.tickets
+          .flatMap((t) =>
+            t.history.map((h) => ({ ...h, tid: t.id, subj: t.subject })),
+          )
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const actions = [...new Set(all.map((e) => e.action))].sort();
+        return (
+          '<div class="card rounded-xl overflow-hidden">' +
+          '<div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line">' +
+          '<select id="audit-action" class="inp w-auto"><option value="all">All actions</option>' +
+          actions
+            .map(
+              (a) =>
+                "<option " +
+                (S.audit.action === a ? "selected" : "") +
+                ' value="' +
+                esc(a) +
+                '">' +
+                esc(a) +
+                "</option>",
+            )
+            .join("") +
+          "</select>" +
+          '<input id="audit-q" class="inp max-w-xs" placeholder="Filter by actor or ticket…" value="' +
+          esc(S.audit.q) +
+          '"/>' +
+          '<div class="ml-auto text-[11px] text-slate-500 mono" id="audit-count"></div>' +
+          '</div><div id="audit-body" class="overflow-x-auto scrollbar-thin"></div></div>'
+        );
+      }
+      function renderAuditBody() {
+        const body = $("audit-body"),
+          cnt = $("audit-count");
+        if (!body) return;
+        let all = S.tickets
+          .flatMap((t) =>
+            t.history.map((h) => ({ ...h, tid: t.id, subj: t.subject })),
+          )
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        if (S.audit.action !== "all")
+          all = all.filter((e) => e.action === S.audit.action);
+        if (S.audit.q) {
+          const q = S.audit.q.toLowerCase();
+          all = all.filter((e) =>
+            (e.actor + " #" + e.tid + " " + e.subj).toLowerCase().includes(q),
+          );
+        }
+        if (cnt) cnt.textContent = all.length + " events";
+        if (!all.length) {
+          body.innerHTML = emptyState(
+            "No audit events",
+            "Nothing matches the current filter.",
+          );
+          return;
+        }
+        body.innerHTML =
+          '<table class="w-full text-sm"><thead class="bg-bg-800 border-b border-line"><tr class="text-left text-[11px] uppercase tracking-wider text-slate-500"><th class="px-4 py-2 w-36">When</th><th class="px-4 py-2 w-16 mono">Ticket</th><th class="px-4 py-2 w-36">Action</th><th class="px-4 py-2">Transition</th><th class="px-4 py-2 w-40">Actor</th></tr></thead><tbody>' +
+          all
+            .map(
+              (e) =>
+                '<tr class="border-b border-line/40 hover-row cursor-pointer" data-action="open-ticket" data-id="' +
+                e.tid +
+                '">' +
+                '<td class="px-4 py-2 text-[11px] text-slate-500 mono" title="' +
+                esc(fmtFull(e.timestamp)) +
+                '">' +
+                fmtTime(e.timestamp) +
+                "</td>" +
+                '<td class="px-4 py-2 text-xs mono text-slate-400">#' +
+                e.tid +
+                "</td>" +
+                '<td class="px-4 py-2"><span class="badge bg-bg-900 text-slate-300 border border-line">' +
+                esc(e.action) +
+                "</span></td>" +
+                '<td class="px-4 py-2 text-xs text-slate-300 mono">' +
+                esc(e.old_value || "∅") +
+                " → " +
+                esc(e.new_value || "∅") +
+                "</td>" +
+                '<td class="px-4 py-2 text-xs text-slate-400 mono truncate max-w-[160px]">' +
+                esc(e.actor) +
+                "</td></tr>",
+            )
+            .join("") +
+          "</tbody></table>";
+      }
+
+      function viewSettings() {
+        return (
+          '<div class="max-w-2xl space-y-4">' +
+          '<div class="card rounded-xl p-5"><div class="text-sm font-medium text-white mb-3">Public portfolio demo</div>' +
+          '<div class="text-xs text-slate-400 leading-relaxed">This is an interactive front-end simulation using sample support tickets. New tickets are classified locally with rule-based demo logic. No real AI model, private API, or production backend is connected.</div>' +
+          '<div class="text-xs text-indigo-300 mt-3">Source repository: <a class="underline" target="_blank" rel="noopener noreferrer" href="https://github.com/NormalGuyhehe/ticketspilot-ai">TicketPilot AI on GitHub</a></div></div>' +
+          '<div class="card rounded-xl p-5"><div class="text-sm font-medium text-white mb-3">Demo Data</div>' +
+          '<div class="flex gap-2"><button class="btn bg-bg-900 border border-line text-slate-300" data-action="reset-demo">Reset demo dataset</button>' +
+          '<button class="btn bg-bg-900 border border-line text-slate-300" data-action="export-json">Export JSON</button></div>' +
+          '<div class="text-[11px] text-slate-500 mt-3">Demo mutations are in-memory only. Reset restores the original batch-run snapshot.</div>' +
+          "</div>" +
+          '<div class="card rounded-xl p-5"><div class="text-sm font-medium text-white mb-2">About</div>' +
+          '<div class="text-xs text-slate-400 space-y-1 mono">' +
+          "<div>TicketPilot AI v0.1.0 · FastAPI + SQLAlchemy + Qwen2.5-7B (llama.cpp)</div>" +
+          "<div>Public demo uses synthetic ticket data; backend test claims are not verified here.</div>" +
+          "<div>Frontend: single-file static build for GitHub Pages</div></div>" +
+          "</div></div>"
+        );
+      }
+
+      /* ================= DRAWER ================= */
+      function renderDrawer() {
+        const d = $("drawer");
+        if (S.drawerId == null) {
+          d.classList.add("translate-x-full");
+          $("drawer-backdrop").classList.add("hidden");
+          return;
+        }
+        const t = S.tickets.find((x) => x.id === S.drawerId);
+        if (!t) {
+          S.drawerId = null;
+          return renderDrawer();
+        }
+        const hist = t.history
+          .map(
+            (h) =>
+              '<div class="flex gap-3"><div class="flex flex-col items-center"><div class="w-2 h-2 rounded-full mt-1.5" style="background:' +
+              (ST_STYLE[h.new_value]?.[2] || "#64748B") +
+              '"></div><div class="w-px flex-1 bg-line"></div></div><div class="flex-1 pb-3"><div class="text-xs text-white font-medium">' +
+              esc(h.action) +
+              '</div><div class="text-[11px] text-slate-500 mono">' +
+              esc(h.old_value || "∅") +
+              " → " +
+              esc(h.new_value || "∅") +
+              " · " +
+              esc(h.actor) +
+              " · " +
+              fmtTime(h.timestamp) +
+              "</div></div></div>",
+          )
+          .join("");
+        d.innerHTML =
+          '<div class="flex items-center justify-between px-5 py-3 border-b border-line flex-shrink-0"><div class="text-sm font-medium text-white">Ticket #' +
+          t.id +
+          '</div><button class="text-slate-500 hover:text-white" data-action="close-drawer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+          '<div class="flex-1 overflow-y-auto scrollbar-thin p-5">' +
+          '<div class="mb-4"><div class="text-[11px] text-slate-500 mono mb-1">' +
+          esc(t.external_id) +
+          " · " +
+          fmtTime(t.created_at) +
+          "</div>" +
+          '<h2 class="text-base font-semibold text-white mb-2">' +
+          esc(t.subject) +
+          "</h2>" +
+          '<div class="flex flex-wrap gap-2">' +
+          badgeStatus(t.status) +
+          badgeCat(t.category) +
+          (t.urgency
+            ? '<span class="badge bg-bg-900 text-slate-300 border border-line">' +
+              esc(t.urgency) +
+              " urgency</span>"
+            : "") +
+          "</div></div>" +
+          '<div class="card rounded-lg p-4 mb-4"><div class="text-[11px] uppercase tracking-wider text-slate-500 mb-2">Original Ticket</div><div class="text-sm text-slate-300 leading-relaxed">' +
+          esc(t.body) +
+          '</div><div class="mt-2 text-[11px] text-slate-500 mono">from: ' +
+          esc(t.customer_email || "—") +
+          "</div></div>" +
+          '<div class="card rounded-lg p-4 mb-4"><div class="text-[11px] uppercase tracking-wider text-slate-500 mb-2">AI Analysis</div>' +
+          (t.error
+            ? '<div class="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-xs text-red-300 mono">' +
+              esc(t.ai_summary) +
+              " — classification failed, ticket preserved</div>"
+            : '<div class="text-sm text-slate-200 mb-3">' +
+              esc(t.ai_summary || "—") +
+              '</div><div class="grid grid-cols-3 gap-3 text-xs"><div><div class="text-[10px] text-slate-500 uppercase">Category</div><div class="text-white font-medium mt-1">' +
+              esc(t.category || "—") +
+              '</div></div><div><div class="text-[10px] text-slate-500 uppercase">Urgency</div><div class="text-white font-medium mt-1">' +
+              esc(t.urgency || "—") +
+              '</div></div><div><div class="text-[10px] text-slate-500 uppercase">Confidence</div><div class="text-white font-semibold mt-1 tabular">' +
+              (t.confidence != null ? t.confidence : "—") +
+              "</div></div></div>" +
+              '<div class="pt-3 mt-3 border-t border-line text-xs"><span class="text-slate-500">Assigned:</span> <span class="mono text-slate-300">' +
+              esc(t.assigned_to || "unassigned") +
+              "</span></div>") +
+          "</div>" +
+          (t.safety_gate
+            ? '<div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-4 text-xs text-amber-300">⚠ Safety gate: <span class="mono">' +
+              esc(t.safety_gate) +
+              "</span></div>"
+            : "") +
+          (t.safety_violation
+            ? '<div class="bg-red-500/10 border border-red-500/30 rounded-lg p-3 mb-4 text-xs text-red-300">✗ Safety violation: ambiguous ticket was auto-routed.</div>'
+            : "") +
+          (t.expected_category
+            ? '<div class="card rounded-lg p-3 mb-4 text-[11px] text-slate-400 mono">expected: ' +
+              esc(t.expected_category) +
+              " / " +
+              esc(t.expected_urgency) +
+              (t.expect_review ? " / human review expected" : "") +
+              "</div>"
+            : "") +
+          '<div class="card rounded-lg p-4"><div class="text-[11px] uppercase tracking-wider text-slate-500 mb-3">History</div>' +
+          hist +
+          "</div>" +
+          "</div>" +
+          '<div class="border-t border-line p-4 flex gap-2 flex-shrink-0">' +
+          drawerActions(t) +
+          "</div>";
+        d.classList.remove("translate-x-full");
+        $("drawer-backdrop").classList.remove("hidden");
+      }
+      function drawerActions(t) {
+        const dis = S.actBusy ? " disabled" : "";
+        if (t.status === "MANUAL_REVIEW" && !t.error)
+          return (
+            '<button class="btn flex-1 bg-emerald-500 text-white"' +
+            dis +
+            ' data-action="act" data-act="approve" data-id="' +
+            t.id +
+            '">✓ Approve</button><button class="btn flex-1 bg-red-500 text-white"' +
+            dis +
+            ' data-action="act" data-act="reject" data-id="' +
+            t.id +
+            '">✗ Reject</button><button class="btn px-3 bg-bg-900 border border-line text-slate-300"' +
+            dis +
+            ' data-action="act" data-act="escalate" data-id="' +
+            t.id +
+            '">Escalate</button>'
+          );
+        if (t.error)
+          return (
+            '<button class="btn flex-1 bg-accent text-white"' +
+            dis +
+            ' data-action="act" data-act="reprocess" data-id="' +
+            t.id +
+            '">↻ Reprocess AI</button>'
+          );
+        if (t.status === "RESOLVED")
+          return '<div class="text-xs text-slate-500 mono self-center">Terminal state — no actions available</div>';
+        return (
+          '<button class="btn flex-1 bg-bg-900 border border-line text-slate-300 hover:border-emerald-500"' +
+          dis +
+          ' data-action="act" data-act="resolve" data-id="' +
+          t.id +
+          '">Mark Resolved</button>'
+        );
+      }
+
+      /* ================= MODAL ================= */
+      function openModal() {
+        const m = $("modal");
+        m.innerHTML =
+          '<div class="card rounded-xl w-full max-w-lg"><div class="flex items-center justify-between px-5 py-3 border-b border-line"><div class="text-sm font-medium text-white">Send Test Ticket</div><button class="text-slate-500 hover:text-white" data-action="close-modal"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+          '<div class="p-5 space-y-3">' +
+          field("External ID", "m-external", "webhook-" + Date.now()) +
+          field("Customer email", "m-email", "customer@example.com") +
+          field("Subject", "m-subject", "") +
+          '<div><label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">Body</label><textarea id="m-body" rows="3" class="inp resize-none"></textarea></div>' +
+          '<div id="m-status" class="text-xs mono min-h-[16px]"></div>' +
+          '</div><div class="flex justify-end gap-2 px-5 py-3 border-t border-line"><button class="btn text-slate-400" data-action="close-modal">Cancel</button><button id="m-submit" class="btn bg-accent text-white" data-action="submit-send">Send to webhook</button></div></div>';
+        m.classList.remove("hidden");
+        m.classList.add("flex");
+        $("modal-backdrop").classList.remove("hidden");
+        setTimeout(() => {
+          const e = $("m-subject");
+          if (e) e.focus();
+        }, 50);
+      }
+      function field(label, id, val) {
+        return (
+          '<div><label class="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">' +
+          label +
+          '</label><input id="' +
+          id +
+          '" class="inp" value="' +
+          esc(val) +
+          '"/></div>'
+        );
+      }
+      function closeModal() {
+        $("modal").classList.add("hidden");
+        $("modal").classList.remove("flex");
+        $("modal-backdrop").classList.add("hidden");
+      }
+
+      /* ================= DEMO PIPELINE SIM ================= */
+      function demoClassify(subject, body) {
+        const t = (subject + " " + body).toLowerCase();
+        let cat = "General";
+        if (
+          /invoice|charge|refund|payment|billing|subscription|price|cancel/.test(
+            t,
+          )
+        )
+          cat = "Billing";
+        else if (
+          /crash|blank|missing column|duplicate notification|bug/.test(t)
+        )
+          cat = "Bug";
+        else if (
+          /login|password|api|webhook|integration|slow|load|lock|500|error/.test(
+            t,
+          )
+        )
+          cat = "Technical";
+        else if (/feature|dark mode|sso|rate limit|add|request/.test(t))
+          cat = "Feature";
+        const urg = /urgent|production|outage|crash|500|compromised/.test(t)
+          ? "High"
+          : /refund|charge|lock|slow|declined/.test(t)
+            ? "Medium"
+            : "Low";
+        const gate =
+          body.trim().length < 20 ||
+          /see attached|^help|urgent help|it doesn'?t work/.test(t) ||
+          /gdpr|legal|lawsuit|security|compromised/.test(t);
+        const conf = gate
+          ? 70 + Math.floor(Math.random() * 15)
+          : 85 + Math.floor(Math.random() * 15);
+        return { cat, urg, conf, gate };
+      }
+      function pushHistory(t, action, ov, nv, actor) {
+        t.history.push({
+          action,
+          old_value: ov,
+          new_value: nv,
+          actor,
+          timestamp: new Date().toISOString(),
+        });
+        t.updated_at = new Date().toISOString();
+      }
+
+      /* ================= ACTIONS ================= */
+      async function liveReq(method, path, body) {
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort(), 8000);
+        try {
+          const r = await fetch(S.live.url + path, {
+            method,
+            headers: {
+              "Content-Type": "application/json",
+              "X-Admin-API-Key": S.live.key,
+              "X-Webhook-API-Key": S.live.key.replace("admin", "webhook"),
+            },
+            body: body ? JSON.stringify(body) : undefined,
+            signal: ctrl.signal,
+          });
+          if (r.status === 401 || r.status === 403) {
+            const d = await r.json().catch(() => ({}));
+            throw new Error(
+              d.detail || "Unauthorized — check API key (401/403)",
+            );
+          }
+          if (r.status === 409) {
+            const d = await r.json().catch(() => ({}));
+            throw new Error(d.detail || "Duplicate external_id (409)");
+          }
+          if (r.status === 400) {
+            const d = await r.json().catch(() => ({}));
+            throw new Error(d.detail || "Invalid state transition (400)");
+          }
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return await r.json().catch(() => ({}));
+        } finally {
+          clearTimeout(to);
+        }
+      }
+      async function liveLoad() {
+        S.loading = true;
+        S.error = null;
+        render();
+        try {
+          const d = await liveReq("GET", "/tickets?page=1&limit=100");
+          S.tickets = (d.items || []).map((t, i) => ({
+            ...t,
+            id: t.id ?? i + 1,
+            body: "(body not exposed by REST API v0.1.0)",
+            expected_category: null,
+            expected_urgency: null,
+            expect_review: null,
+            safety_gate: null,
+            safety_violation: false,
+            error:
+              t.ai_summary === "AI_UNAVAILABLE" ||
+              t.ai_summary === "SYSTEM_ERROR",
+            history: [],
+          }));
+          S.mode = "live";
+        } catch (e) {
+          S.error =
+            e.name === "AbortError" ? "Request timed out after 8s" : e.message;
+        }
+        S.loading = false;
+        render();
+        if (S.error) toast("Live load failed: " + S.error, "error");
+        else toast("Connected to " + S.live.url, "success");
+      }
+      async function doAction(act, id) {
+        const t = S.tickets.find((x) => x.id === id);
+        if (!t) return;
+        S.actBusy = true;
+        renderDrawer();
+        const map = {
+          approve: ["APPROVED", "✓ Ticket approved"],
+          reject: ["REJECTED", "✗ Ticket rejected"],
+          escalate: ["ESCALATED", "⬆ Ticket escalated"],
+          resolve: ["RESOLVED", "✓ Ticket resolved"],
+        };
+        try {
+          if (S.mode === "live") {
+            const paths = {
+              approve: "/admin/reviews/" + id + "/approve",
+              reject: "/admin/reviews/" + id + "/reject",
+              escalate: "/admin/reviews/" + id + "/escalate",
+              resolve: "/admin/tickets/" + id + "/resolve",
+              reprocess: "/admin/tickets/" + id + "/reprocess",
+            };
+            const body =
+              act === "resolve" || act === "reprocess"
+                ? undefined
+                : {
+                    reviewer_email: "operator@example.com",
+                    comment: "Via dashboard",
+                  };
+            await liveReq("POST", paths[act], body);
+            if (act === "reprocess") {
+              t.status = "RECEIVED";
+              t.error = false;
+              pushHistory(
+                t,
+                "STATUS_CHANGED",
+                "MANUAL_REVIEW",
+                "RECEIVED",
+                "admin",
+              );
+              setTimeout(() => liveLoad(), 1500);
+            } else {
+              t.status = map[act][0];
+              t.reviewed_by = "operator@example.com";
+              pushHistory(
+                t,
+                act === "resolve" ? "STATUS_CHANGED" : "REVIEWED",
+                t.status,
+                map[act][0],
+                "operator@example.com",
+              );
+            }
+            toast(map[act] ? map[act][1] : "↻ Reprocess scheduled", "success");
+          } else {
+            await new Promise((r) => setTimeout(r, 350));
+            if (act === "reprocess") {
+              t.error = false;
+              t.status = "RECEIVED";
+              pushHistory(
+                t,
+                "STATUS_CHANGED",
+                "MANUAL_REVIEW",
+                "RECEIVED",
+                "admin",
+              );
+              toast("↻ Reprocessing…", "info");
+              render();
+              setTimeout(() => {
+                const c = demoClassify(t.subject, t.body);
+                t.category = c.cat;
+                t.urgency = c.urg;
+                t.confidence = c.conf;
+                t.ai_summary = "Re-classified: " + t.subject.toLowerCase();
+                t.status =
+                  c.gate || c.conf < 80 ? "MANUAL_REVIEW" : "AUTO_ROUTED";
+                t.assigned_to =
+                  t.status === "AUTO_ROUTED" ? "auto-routed@example.com" : null;
+                pushHistory(
+                  t,
+                  t.status === "AUTO_ROUTED" ? "AUTO_ROUTED" : "STATUS_CHANGED",
+                  "RECEIVED",
+                  t.status,
+                  "background-worker",
+                );
+                render();
+                toast("↻ Reprocessed → " + t.status, "success");
+              }, 1400);
+              S.actBusy = false;
+              return;
+            }
+            t.status = map[act][0];
+            t.reviewed_by = "operator@example.com";
+            pushHistory(
+              t,
+              act === "resolve" ? "STATUS_CHANGED" : "REVIEWED",
+              null,
+              map[act][0],
+              "operator@example.com",
+            );
+            toast(map[act][1], act === "reject" ? "warning" : "success");
+          }
+        } catch (e) {
+          toast("Action failed: " + e.message, "error");
+        }
+        S.actBusy = false;
+        render();
+      }
+      async function sendTicket() {
+        const st = $("m-status"),
+          btn = $("m-submit");
+        const ext = $("m-external").value.trim(),
+          email = $("m-email").value.trim(),
+          subj = $("m-subject").value.trim(),
+          body = $("m-body").value.trim();
+        if (!ext || !email || !subj || !body) {
+          st.innerHTML =
+            '<span class="text-red-400">All fields are required</span>';
+          return;
+        }
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+          st.innerHTML =
+            '<span class="text-red-400">Invalid email format</span>';
+          return;
+        }
+        if (S.sendBusy) return;
+        S.sendBusy = true;
+        btn.disabled = true;
+        st.innerHTML = '<span class="text-accent">Sending…</span>';
+        try {
+          if (S.mode === "live") {
+            const d = await liveReq("POST", "/webhooks/tickets", {
+              external_id: ext,
+              customer_email: email,
+              subject: subj,
+              body,
+            });
+            st.innerHTML =
+              '<span class="text-emerald-400">✓ Accepted (202) — ticket #' +
+              esc(d.id) +
+              " processing in background</span>";
+            toast("✓ Ticket #" + d.id + " ingested", "success");
+            setTimeout(() => liveLoad(), 2500);
+          } else {
+            await new Promise((r) => setTimeout(r, 400));
+            const dup = S.tickets.find((t) => t.external_id === ext);
+            if (dup) {
+              st.innerHTML =
+                '<span class="text-amber-400">Duplicate external_id — returned existing #' +
+                dup.id +
+                " (idempotent, no reprocessing)</span>";
+              toast("Duplicate detected → existing #" + dup.id, "warning");
+            } else {
+              const now = new Date().toISOString();
+              const t = {
+                id: Math.max(...S.tickets.map((x) => x.id), 0) + 1,
+                external_id: ext,
+                customer_email: email,
+                subject: subj,
+                body,
+                category: null,
+                urgency: null,
+                confidence: null,
+                status: "RECEIVED",
+                assigned_to: null,
+                expected_category: null,
+                expected_urgency: null,
+                expect_review: null,
+                safety_gate: null,
+                safety_violation: false,
+                error: false,
+                ai_summary: null,
+                reviewed_by: null,
+                review_decision: null,
+                review_comment: null,
+                created_at: now,
+                updated_at: now,
+                resolved_at: null,
+                history: [
+                  {
+                    action: "CREATED",
+                    old_value: null,
+                    new_value: "RECEIVED",
+                    actor: "webhook",
+                    timestamp: now,
+                  },
+                ],
+              };
+              S.tickets.unshift(t);
+              st.innerHTML =
+                '<span class="text-emerald-400">✓ 202 Accepted — classifying…</span>';
+              setTimeout(() => {
+                pushHistory(
+                  t,
+                  "STATUS_CHANGED",
+                  "RECEIVED",
+                  "PROCESSING",
+                  "background-worker",
+                );
+                t.status = "PROCESSING";
+                render();
+                setTimeout(() => {
+                  const c = demoClassify(subj, body);
+                  t.category = c.cat;
+                  t.urgency = c.urg;
+                  t.confidence = c.conf;
+                  t.ai_summary = "Demo classification: " + subj.toLowerCase();
+                  if (c.gate || c.conf < 80) {
+                    t.status = "MANUAL_REVIEW";
+                    t.safety_gate = c.gate
+                      ? "demo safety gate"
+                      : "confidence < 80";
+                    pushHistory(
+                      t,
+                      "STATUS_CHANGED",
+                      "PROCESSING",
+                      "MANUAL_REVIEW",
+                      "background-worker",
+                    );
+                  } else {
+                    t.status = "AUTO_ROUTED";
+                    t.assigned_to = "auto-routed@example.com";
+                    pushHistory(
+                      t,
+                      "AUTO_ROUTED",
+                      "PROCESSING",
+                      "AUTO_ROUTED",
+                      "background-worker",
+                    );
+                  }
+                  render();
+                  toast("✓ #" + t.id + " → " + t.status, "success");
+                }, 1200);
+              }, 500);
+            }
+          }
+          setTimeout(closeModal, 1400);
+        } catch (e) {
+          st.innerHTML =
+            '<span class="text-red-400">' + esc(e.message) + "</span>";
+          toast("Send failed: " + e.message, "error");
+        }
+        S.sendBusy = false;
+        if (btn) btn.disabled = false;
+      }
+
+      /* ================= RENDER / ROUTER ================= */
+      function renderView() {
+        const v = $("view");
+        if (S.error && S.mode === "live" && S.route !== "settings") {
+          v.innerHTML =
+            '<div class="card rounded-xl">' + errorState(S.error) + "</div>";
+          return;
+        }
+        if (S.route === "inbox") {
+          v.innerHTML = viewInbox();
+          renderInboxBody();
+        } else if (S.route === "queue") v.innerHTML = viewQueue();
+        else if (S.route === "metrics") v.innerHTML = viewMetrics();
+        else if (S.route === "audit") {
+          v.innerHTML = viewAudit();
+          renderAuditBody();
+        } else if (S.route === "settings") v.innerHTML = viewSettings();
+        else v.innerHTML = viewDashboard();
+      }
+      function render() {
+        updateDynamic();
+        renderView();
+        renderDrawer();
+      }
+      function route() {
+        const h = (location.hash || "#/dashboard")
+          .replace("#/", "")
+          .split("?")[0];
+        const known = [
+          "dashboard",
+          "inbox",
+          "queue",
+          "metrics",
+          "audit",
+          "settings",
+        ];
+        S.route = known.includes(h) ? h : "dashboard";
+        if (!known.includes(h)) location.hash = "#/dashboard";
+        render();
+      }
+
+      /* ================= EVENTS (delegation) ================= */
+      document.addEventListener("click", (e) => {
+        const t = e.target.closest("[data-action]");
+        if (!t) return;
+        const a = t.dataset.action;
+        if (a === "nav") return;
+        if (a === "set-mode") {
+          const m = t.dataset.mode;
+          if (m === "live") {
+            liveLoad();
+          } else {
+            S.mode = "demo";
+            S.error = null;
+            if (!S.tickets.length) S.tickets = JSON.parse(SNAPSHOT);
+            render();
+            toast("Demo mode", "info");
+          }
+        } else if (a === "retry") {
+          liveLoad();
+        } else if (a === "inbox-filter") {
+          S.inbox.status = t.dataset.status;
+          S.inbox.page = 1;
+          renderView();
+        } else if (a === "inbox-clear") {
+          S.inbox.q = "";
+          S.inbox.status = "all";
+          S.inbox.category = "all";
+          S.inbox.page = 1;
+          renderView();
+          const si = $("inbox-search");
+          if (si) si.value = "";
+          const sc = $("inbox-cat");
+          if (sc) sc.value = "all";
+        } else if (a === "inbox-page") {
+          S.inbox.page = parseInt(t.dataset.page, 10) || 1;
+          renderInboxBody();
+        } else if (a === "open-ticket") {
+          S.drawerId = parseInt(t.dataset.id, 10);
+          renderDrawer();
+        } else if (a === "close-drawer" || a === "drawer-backdrop") {
+          S.drawerId = null;
+          renderDrawer();
+        } else if (a === "act") {
+          doAction(t.dataset.act, parseInt(t.dataset.id, 10));
+        } else if (a === "open-send") {
+          openModal();
+        } else if (a === "close-modal" || a === "modal-backdrop") {
+          closeModal();
+        } else if (a === "submit-send") {
+          sendTicket();
+        } else if (a === "save-settings") {
+          S.live.url = ($("set-url")?.value || "").trim().replace(/\/$/, "");
+          S.live.key = ($("set-key")?.value || "").trim();
+          lsSet("tp_url", S.live.url);
+          lsSet("tp_key", S.live.key);
+          toast("Settings saved — reconnecting…", "info");
+          liveLoad();
+        } else if (a === "reset-demo") {
+          S.tickets = JSON.parse(SNAPSHOT);
+          S.mode = "demo";
+          S.error = null;
+          render();
+          toast("Demo dataset restored", "success");
+        } else if (a === "export-json") {
+          const blob = new Blob(
+            [
+              JSON.stringify(
+                { metrics: computeMetrics(S.tickets), tickets: S.tickets },
+                null,
+                2,
+              ),
+            ],
+            { type: "application/json" },
+          );
+          const u = URL.createObjectURL(blob);
+          const a2 = document.createElement("a");
+          a2.href = u;
+          a2.download = "ticketpilot-export.json";
+          a2.click();
+          URL.revokeObjectURL(u);
+          toast("Exported JSON", "success");
+        }
+      });
+      document.addEventListener("input", (e) => {
+        if (e.target.id === "inbox-search") {
+          S.inbox.q = e.target.value;
+          S.inbox.page = 1;
+          clearTimeout(window.__sd);
+          window.__sd = setTimeout(renderInboxBody, 250);
+        }
+        if (e.target.id === "audit-q") {
+          S.audit.q = e.target.value;
+          clearTimeout(window.__ad);
+          window.__ad = setTimeout(renderAuditBody, 250);
+        }
+      });
+      document.addEventListener("change", (e) => {
+        if (e.target.id === "inbox-cat") {
+          S.inbox.category = e.target.value;
+          S.inbox.page = 1;
+          renderInboxBody();
+        }
+        if (e.target.id === "inbox-sort") {
+          S.inbox.sort = e.target.value;
+          renderInboxBody();
+        }
+        if (e.target.id === "audit-action") {
+          S.audit.action = e.target.value;
+          renderAuditBody();
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          if (!$("modal").classList.contains("hidden")) closeModal();
+          else if (S.drawerId != null) {
+            S.drawerId = null;
+            renderDrawer();
+          }
+        }
+      });
+      window.addEventListener("hashchange", route);
+
+      /* ================= INIT ================= */
+      renderShell();
+      route();
+    </script>
+  </body>
+</html>
